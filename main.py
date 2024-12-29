@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QLabel
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import Qt
 from picture import Ui_MainWindow  # 変換されたファイルをインポート
+import cv2
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -23,10 +24,13 @@ class MainWindow(QMainWindow):
             self.label.setPixmap(pixmap)
         else:
             print("画像が見つかりません")
+
     def set_image(self, image):
         """フレーム内に画像を設定"""
-        qimage = QImage(
-            image.data, image.shape[1], image.shape[0], QImage.Format_RGB888)
+        height, width, channel = image.shape
+        bytes_per_line = 3 * width
+        qimage = QImage(image.data, width, height, bytes_per_line,
+                        QImage.Format_RGB888).rgbSwapped()
         pixmap = QPixmap.fromImage(qimage)
 
         # 画像の縦横比を維持しながら最大化
@@ -52,4 +56,3 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
-

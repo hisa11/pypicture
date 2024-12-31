@@ -8,6 +8,7 @@ from picture import Ui_MainWindow
 from revolution import RevolutionWindow
 from brightness import BrightnessWindow
 from contrast import ContrastWindow
+from shadow import ShadowWindow
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -42,6 +43,7 @@ class MainWindow(QMainWindow):
         self.ui.revolution.clicked.connect(self.open_revolution_window)
         self.ui.brightness.clicked.connect(self.open_brightness_window)
         self.ui.contrast.clicked.connect(self.open_contrast_window)
+        self.ui.shadow.clicked.connect(self.open_shadow_window)
 
     def set_image(self, image, fit_to_frame=True):
         """画像を設定し、必要に応じてフレームに fitting or 等倍表示を基準とする。"""
@@ -210,6 +212,25 @@ class MainWindow(QMainWindow):
         cw = self.sender()
         if cw:
             adjusted = cw.get_adjusted_image()
+            # 画像だけ差し替え
+            self.image = adjusted
+            self.display_image_cache = None
+            self.update_image()
+
+    def open_shadow_window(self):
+        if self.image is None:
+            return
+        shadow_window = ShadowWindow(self.image, self)
+        shadow_window.shadow_changed.connect(self.update_shadow_image)
+        if shadow_window.exec_() == QDialog.Accepted:
+            self.set_image(shadow_window.get_adjusted_image(),
+                           fit_to_frame=False)
+
+    def update_shadow_image(self, value):
+        """影調整のリアルタイム反映"""
+        sw = self.sender()
+        if sw:
+            adjusted = sw.get_adjusted_image()
             # 画像だけ差し替え
             self.image = adjusted
             self.display_image_cache = None

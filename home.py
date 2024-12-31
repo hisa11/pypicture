@@ -14,6 +14,7 @@ class HomeWindow(QMainWindow):
         super(HomeWindow, self).__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        self.setFixedSize(self.size())
 
         # 画像表示用のラベルをフレームに追加
         self.image_label = QLabel(self.ui.frame)

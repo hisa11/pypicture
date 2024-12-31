@@ -43,7 +43,7 @@ class RevolutionWindow(QDialog):
         if isinstance(angle, int):
             self.slider.setValue(angle)
             self.spin_box.setValue(angle)
-        # "+" の角度で右回転(時計回り)にするため符号を反転
+        # "+" のangleは時計回り(右回転)とする
         center = (self.original_image.shape[1] // 2,
                   self.original_image.shape[0] // 2)
         matrix = cv2.getRotationMatrix2D(center, -angle, 1.0)

@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, QRect
 from picture import Ui_MainWindow
 from revolution import RevolutionWindow
 from brightness import BrightnessWindow
+from contrast import ContrastWindow
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -40,6 +41,7 @@ class MainWindow(QMainWindow):
         self.ui.trimming.clicked.connect(self.start_trimming)
         self.ui.revolution.clicked.connect(self.open_revolution_window)
         self.ui.brightness.clicked.connect(self.open_brightness_window)
+        self.ui.contrast.clicked.connect(self.open_contrast_window)
 
     def set_image(self, image, fit_to_frame=True):
         """画像を設定し、必要に応じてフレームに fitting or 等倍表示を基準とする。"""
@@ -189,6 +191,25 @@ class MainWindow(QMainWindow):
         bw = self.sender()
         if bw:
             adjusted = bw.get_adjusted_image()
+            # 画像だけ差し替え
+            self.image = adjusted
+            self.display_image_cache = None
+            self.update_image()
+
+    def open_contrast_window(self):
+        if self.image is None:
+            return
+        contrast_window = ContrastWindow(self.image, self)
+        contrast_window.contrast_changed.connect(self.update_contrast_image)
+        if contrast_window.exec_() == QDialog.Accepted:
+            self.set_image(contrast_window.get_adjusted_image(),
+                           fit_to_frame=False)
+
+    def update_contrast_image(self, value):
+        """コントラスト調整のリアルタイム反映"""
+        cw = self.sender()
+        if cw:
+            adjusted = cw.get_adjusted_image()
             # 画像だけ差し替え
             self.image = adjusted
             self.display_image_cache = None

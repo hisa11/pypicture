@@ -20,7 +20,8 @@ from chroma import ChromaWindow
 from color import ColorWindow
 from text import TextWindow
 from sticker import StickerWindow
-from retouch import RetouchWindow  
+from retouch import RetouchWindow
+from save import SaveWindow  # 追加
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -69,7 +70,7 @@ class MainWindow(QMainWindow):
         self.sticker_scaling = False
         self.temp_sticker_scale = 1.0
         self.scale_handle_rect = QRect()
-        self.scale_handle_size = 20  
+        self.scale_handle_size = 20
 
         # ボタン
         self.ui.trimming.clicked.connect(self.start_trimming)
@@ -81,7 +82,8 @@ class MainWindow(QMainWindow):
         self.ui.color.clicked.connect(self.open_color_window)
         self.ui.text.clicked.connect(self.open_text_window)
         self.ui.sticker.clicked.connect(self.open_sticker_window)
-        self.ui.retouch.clicked.connect(self.open_retouch_window) 
+        self.ui.retouch.clicked.connect(self.open_retouch_window)
+        self.ui.save.clicked.connect(self.open_save_window)  # 追加
 
     def set_image(self, image, fit_to_frame=True):
         self.image = np.ascontiguousarray(image)
@@ -138,6 +140,27 @@ class MainWindow(QMainWindow):
             new_height
         )
         self.update()
+
+    def open_save_window(self):
+        if self.image is None:
+            QMessageBox.warning(self, "警告", "画像がロードされていません。")
+            return
+        save_window = SaveWindow(self)
+        save_window.save_completed.connect(self.save_image)
+        save_window.exec_()
+
+    def save_image(self, file_path, quality):
+        if self.image is None:
+            QMessageBox.warning(self, "警告", "画像がロードされていません。")
+            return
+        extension = file_path.split('.')[-1].lower()
+        if extension == 'jpg' or extension == 'jpeg':
+            cv2.imwrite(file_path, self.image, [
+                        int(cv2.IMWRITE_JPEG_QUALITY), quality])
+        else:
+            cv2.imwrite(file_path, self.image)
+        QMessageBox.information(self, "完了", "画像が保存されました。")
+
 
     def mousePressEvent(self, event):
         # テキスト編集

@@ -149,42 +149,6 @@ class MainWindow(QMainWindow):
         )
         self.update()
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if self.image is None:
-            return
-        painter = QPainter(self)
-        painter.translate(self.image_label.pos())
-
-        # 仮テキスト
-        if self.text_editing and self.temp_text:
-            painter.setFont(self.temp_font)
-            painter.setPen(self.temp_color)
-            painter.drawText(self.temp_text_pos, self.temp_text)
-
-        # 仮ステッカー
-        if self.sticker_editing and not self.temp_sticker.isNull():
-            scaled_width = self.temp_sticker.width() * self.temp_sticker_scale
-            scaled_height = self.temp_sticker.height() * self.temp_sticker_scale
-            sticker_scaled = self.temp_sticker.scaled(
-                scaled_width, scaled_height,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            painter.drawPixmap(self.temp_sticker_pos, sticker_scaled)
-            # リサイズハンドル描画
-            self.scale_handle_rect = QRect(
-                self.temp_sticker_pos.x() + sticker_scaled.width() -
-                self.scale_handle_size // 2,
-                self.temp_sticker_pos.y() + sticker_scaled.height() -
-                self.scale_handle_size // 2,
-                self.scale_handle_size, self.scale_handle_size
-            )
-            painter.setPen(Qt.red)
-            painter.drawRect(self.scale_handle_rect)
-
-        painter.end()
-
     def mousePressEvent(self, event):
         # テキスト編集
         if self.text_editing:
@@ -227,6 +191,7 @@ class MainWindow(QMainWindow):
             self.rect.setTopLeft(mapped_pos)
             self.rect.setBottomRight(mapped_pos)
 
+# ...existing code...
     def mouseMoveEvent(self, event):
         # テキストドラッグ
         if self.text_dragging and self.text_editing and self.last_pan_pos:
@@ -242,6 +207,11 @@ class MainWindow(QMainWindow):
             dx = event.pos().x() - self.last_pan_pos.x()
             dy = event.pos().y() - self.last_pan_pos.y()
             self.temp_sticker_pos += QPoint(dx, dy)
+            # ステッカーの位置をフレーム内に制限
+            self.temp_sticker_pos.setX(max(0, min(self.temp_sticker_pos.x(
+            ), self.ui.frame.width() - self.temp_sticker.width() * self.temp_sticker_scale)))
+            self.temp_sticker_pos.setY(max(0, min(self.temp_sticker_pos.y(
+            ), self.ui.frame.height() - self.temp_sticker.height() * self.temp_sticker_scale)))
             self.last_pan_pos = event.pos()
             self.update()
             return
@@ -269,6 +239,7 @@ class MainWindow(QMainWindow):
             mapped_pos = self.image_label.mapFromParent(event.pos())
             self.rect.setBottomRight(mapped_pos)
             self.update()
+# ...existing code...
 
     def mouseReleaseEvent(self, event):
         # テキストドラッグ終了
@@ -484,6 +455,47 @@ class MainWindow(QMainWindow):
         self.temp_sticker_scale = 1.0
         self.sticker_editing = True
         self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.image is None:
+            return
+        painter = QPainter(self)
+        painter.translate(self.image_label.pos())
+
+        # 仮テキスト
+        if self.text_editing and self.temp_text:
+            painter.setFont(self.temp_font)
+            painter.setPen(self.temp_color)
+            painter.drawText(self.temp_text_pos, self.temp_text)
+
+        # 仮ステッカー
+        if self.sticker_editing and not self.temp_sticker.isNull():
+            scaled_width = self.temp_sticker.width() * self.temp_sticker_scale
+            scaled_height = self.temp_sticker.height() * self.temp_sticker_scale
+            sticker_scaled = self.temp_sticker.scaled(
+                scaled_width, scaled_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            # ステッカーの位置をフレーム内に制限
+            self.temp_sticker_pos.setX(
+                max(0, min(self.temp_sticker_pos.x(), self.ui.frame.width() - scaled_width)))
+            self.temp_sticker_pos.setY(
+                max(0, min(self.temp_sticker_pos.y(), self.ui.frame.height() - scaled_height)))
+            painter.drawPixmap(self.temp_sticker_pos, sticker_scaled)
+            # リサイズハンドル描画
+            self.scale_handle_rect = QRect(
+                self.temp_sticker_pos.x() + sticker_scaled.width() -
+                self.scale_handle_size // 2,
+                self.temp_sticker_pos.y() + sticker_scaled.height() -
+                self.scale_handle_size // 2,
+                self.scale_handle_size, self.scale_handle_size
+            )
+            painter.setPen(Qt.red)
+            painter.drawRect(self.scale_handle_rect)
+
+        painter.end()
 
 def main():
     import numpy as np

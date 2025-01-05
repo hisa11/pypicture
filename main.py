@@ -21,7 +21,7 @@ from color import ColorWindow
 from text import TextWindow
 from sticker import StickerWindow
 from retouch import RetouchWindow
-from save import SaveWindow  # 追加
+from save import SaveWindow  
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -33,8 +33,6 @@ class MainWindow(QMainWindow):
         self.ui.frame.setMouseTracking(True)
 
         self.image_label = QLabel(self.ui.frame)
-        self.image_label.setGeometry(
-            0, 0, self.ui.frame.width(), self.ui.frame.height())
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
@@ -85,6 +83,9 @@ class MainWindow(QMainWindow):
         self.ui.retouch.clicked.connect(self.open_retouch_window)
         self.ui.save.clicked.connect(self.open_save_window)  # 追加
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_image()
     def set_image(self, image, fit_to_frame=True):
         self.image = np.ascontiguousarray(image)
         self.display_image_cache = None

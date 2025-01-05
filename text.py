@@ -1,6 +1,3 @@
-import sys
-import cv2
-import numpy as np
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                                QPushButton, QComboBox, QSpinBox, QColorDialog)
 from PySide6.QtGui import QFont, QColor

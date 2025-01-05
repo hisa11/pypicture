@@ -2,24 +2,12 @@ import sys
 import cv2
 import numpy as np
 from PySide6.QtWidgets import (
-    QApplication,
-    QMainWindow,
-    QLabel,
-    QVBoxLayout,
-    QDialog,
-    QFileDialog,
+    QApplication, QMainWindow, QLabel, QVBoxLayout, QDialog, QFileDialog,
     QMessageBox
 )
 from PySide6.QtGui import (
-    QPixmap,
-    QImage,
-    QWheelEvent,
-    QPainter,
-    QPen,
-    QCursor,
-    QFont,
-    QColor,
-    QFontMetrics
+    QPixmap, QImage, QWheelEvent, QPainter, QPen, QCursor,
+    QFont, QColor, QFontMetrics
 )
 from PySide6.QtCore import Qt, QRect, QPoint, QSize
 
@@ -32,6 +20,7 @@ from chroma import ChromaWindow
 from color import ColorWindow
 from text import TextWindow
 from sticker import StickerWindow
+from retouch import RetouchWindow  # 追加
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -92,6 +81,7 @@ class MainWindow(QMainWindow):
         self.ui.color.clicked.connect(self.open_color_window)
         self.ui.text.clicked.connect(self.open_text_window)
         self.ui.sticker.clicked.connect(self.open_sticker_window)
+        self.ui.retouch.clicked.connect(self.open_retouch_window)  # 追加
 
     def set_image(self, image, fit_to_frame=True):
         self.image = np.ascontiguousarray(image)
@@ -191,7 +181,6 @@ class MainWindow(QMainWindow):
             self.rect.setTopLeft(mapped_pos)
             self.rect.setBottomRight(mapped_pos)
 
-# ...existing code...
     def mouseMoveEvent(self, event):
         # テキストドラッグ
         if self.text_dragging and self.text_editing and self.last_pan_pos:
@@ -208,10 +197,10 @@ class MainWindow(QMainWindow):
             dy = event.pos().y() - self.last_pan_pos.y()
             self.temp_sticker_pos += QPoint(dx, dy)
             # ステッカーの位置をフレーム内に制限
-            self.temp_sticker_pos.setX(max(0, min(self.temp_sticker_pos.x(
-            ), self.ui.frame.width() - self.temp_sticker.width() * self.temp_sticker_scale)))
-            self.temp_sticker_pos.setY(max(0, min(self.temp_sticker_pos.y(
-            ), self.ui.frame.height() - self.temp_sticker.height() * self.temp_sticker_scale)))
+            self.temp_sticker_pos.setX(
+                max(0, min(self.temp_sticker_pos.x(), self.ui.frame.width() - self.temp_sticker.width() * self.temp_sticker_scale)))
+            self.temp_sticker_pos.setY(
+                max(0, min(self.temp_sticker_pos.y(), self.ui.frame.height() - self.temp_sticker.height() * self.temp_sticker_scale)))
             self.last_pan_pos = event.pos()
             self.update()
             return
@@ -239,7 +228,6 @@ class MainWindow(QMainWindow):
             mapped_pos = self.image_label.mapFromParent(event.pos())
             self.rect.setBottomRight(mapped_pos)
             self.update()
-# ...existing code...
 
     def mouseReleaseEvent(self, event):
         # テキストドラッグ終了
@@ -286,6 +274,14 @@ class MainWindow(QMainWindow):
         rev.angle_changed.connect(self.update_rotated_image)
         if rev.exec_() == QDialog.Accepted:
             self.set_image(rev.get_rotated_image(), fit_to_frame=False)
+
+    def open_retouch_window(self):
+        if self.image is None:
+            QMessageBox.warning(self, "警告", "画像がロードされていません。")
+            return
+        retouch_window = RetouchWindow(self.image, self)
+        retouch_window.retouch_completed.connect(self.set_image)
+        retouch_window.exec_()
 
     def update_rotated_image(self, angle):
         rw = self.sender()
@@ -407,7 +403,7 @@ class MainWindow(QMainWindow):
         tw.exec_()
 
     def on_text_settings_applied(self, text, font, color, size):
-        self.temp_text = "ここにテキスト"
+        self.temp_text = text
         self.temp_font = font
         self.temp_color = color
         self.text_editing = True
@@ -498,7 +494,6 @@ class MainWindow(QMainWindow):
         painter.end()
 
 def main():
-    import numpy as np
     app = QApplication(sys.argv)
     w = MainWindow()
     w.show()

@@ -20,7 +20,7 @@ from chroma import ChromaWindow
 from color import ColorWindow
 from text import TextWindow
 from sticker import StickerWindow
-from retouch import RetouchWindow  # 追加
+from retouch import RetouchWindow  
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
         self.sticker_scaling = False
         self.temp_sticker_scale = 1.0
         self.scale_handle_rect = QRect()
-        self.scale_handle_size = 20  # 右下角に出るリサイズ用ハンドルのサイズ
+        self.scale_handle_size = 20  
 
         # ボタン
         self.ui.trimming.clicked.connect(self.start_trimming)
@@ -81,7 +81,7 @@ class MainWindow(QMainWindow):
         self.ui.color.clicked.connect(self.open_color_window)
         self.ui.text.clicked.connect(self.open_text_window)
         self.ui.sticker.clicked.connect(self.open_sticker_window)
-        self.ui.retouch.clicked.connect(self.open_retouch_window)  # 追加
+        self.ui.retouch.clicked.connect(self.open_retouch_window) 
 
     def set_image(self, image, fit_to_frame=True):
         self.image = np.ascontiguousarray(image)
@@ -196,7 +196,6 @@ class MainWindow(QMainWindow):
             dx = event.pos().x() - self.last_pan_pos.x()
             dy = event.pos().y() - self.last_pan_pos.y()
             self.temp_sticker_pos += QPoint(dx, dy)
-            # ステッカーの位置をフレーム内に制限
             self.temp_sticker_pos.setX(
                 max(0, min(self.temp_sticker_pos.x(), self.ui.frame.width() - self.temp_sticker.width() * self.temp_sticker_scale)))
             self.temp_sticker_pos.setY(
@@ -230,22 +229,22 @@ class MainWindow(QMainWindow):
             self.update()
 
     def mouseReleaseEvent(self, event):
-        # テキストドラッグ終了
+        
         if self.text_dragging and event.button() == Qt.LeftButton:
             self.text_dragging = False
 
-        # ステッカー操作終了
+        
         if self.sticker_dragging and event.button() == Qt.LeftButton:
             self.sticker_dragging = False
         if self.sticker_scaling and event.button() == Qt.LeftButton:
             self.sticker_scaling = False
 
-        # パン終了
+        
         if self.is_panning and event.button() in [Qt.LeftButton, Qt.MiddleButton]:
             self.is_panning = False
             self.setCursor(QCursor(Qt.ArrowCursor))
 
-        # トリミング終了
+        
         if self.cropping and event.button() == Qt.LeftButton:
             mapped_pos = self.image_label.mapFromParent(event.pos())
             self.rect.setBottomRight(mapped_pos)
@@ -459,13 +458,13 @@ class MainWindow(QMainWindow):
         painter = QPainter(self)
         painter.translate(self.image_label.pos())
 
-        # 仮テキスト
+        
         if self.text_editing and self.temp_text:
             painter.setFont(self.temp_font)
             painter.setPen(self.temp_color)
             painter.drawText(self.temp_text_pos, self.temp_text)
 
-        # 仮ステッカー
+        
         if self.sticker_editing and not self.temp_sticker.isNull():
             scaled_width = self.temp_sticker.width() * self.temp_sticker_scale
             scaled_height = self.temp_sticker.height() * self.temp_sticker_scale
@@ -474,13 +473,13 @@ class MainWindow(QMainWindow):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
-            # ステッカーの位置をフレーム内に制限
+            
             self.temp_sticker_pos.setX(
                 max(0, min(self.temp_sticker_pos.x(), self.ui.frame.width() - scaled_width)))
             self.temp_sticker_pos.setY(
                 max(0, min(self.temp_sticker_pos.y(), self.ui.frame.height() - scaled_height)))
             painter.drawPixmap(self.temp_sticker_pos, sticker_scaled)
-            # リサイズハンドル描画
+            
             self.scale_handle_rect = QRect(
                 self.temp_sticker_pos.x() + sticker_scaled.width() -
                 self.scale_handle_size // 2,

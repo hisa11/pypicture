@@ -16,30 +16,29 @@ class HomeWindow(QMainWindow):
         self.ui.setupUi(self)
         self.setFixedSize(self.size())
 
-        # 画像表示用のラベルをフレームに追加
+       
         self.image_label = QLabel(self.ui.frame)
         self.image_label.setGeometry(
             0, 0, self.ui.frame.width(), self.ui.frame.height()
         )
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # 編集履歴を表示するためのレイアウト
+       
         self.history_layout = QVBoxLayout(self.ui.frame)
         self.history_layout.addWidget(self.image_label)
 
-        # ボタンのクリックイベントを接続
         self.ui.pushButton.clicked.connect(self.create_new_image)
         self.ui.pushButton_2.clicked.connect(self.open_image)
 
-        # 編集履歴を保存するリスト
+       
         self.history = []
 
-        # MainWindow インスタンスを作成
+       
         self.main_window = MainWindow()
 
     def create_new_image(self):
         try:
-            # フレームいっぱいに白画面を作成
+           
             white_image = np.ones(
                 (self.ui.frame.height(), self.ui.frame.width(), 3), np.uint8
             ) * 255

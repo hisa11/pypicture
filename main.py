@@ -1,9 +1,28 @@
 import sys
 import cv2
 import numpy as np
-from PySide6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QDialog
-from PySide6.QtGui import QPixmap, QImage, QWheelEvent, QPainter, QPen, QCursor
-from PySide6.QtCore import Qt, QRect
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QLabel,
+    QVBoxLayout,
+    QDialog,
+    QFileDialog,
+    QMessageBox
+)
+from PySide6.QtGui import (
+    QPixmap,
+    QImage,
+    QWheelEvent,
+    QPainter,
+    QPen,
+    QCursor,
+    QFont,
+    QColor,
+    QFontMetrics
+)
+from PySide6.QtCore import Qt, QRect, QPoint, QSize
+
 from picture import Ui_MainWindow
 from revolution import RevolutionWindow
 from brightness import BrightnessWindow
@@ -11,6 +30,7 @@ from contrast import ContrastWindow
 from shadow import ShadowWindow
 from chroma import ChromaWindow
 from color import ColorWindow
+from text import TextWindow
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -18,16 +38,13 @@ class MainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
-        # マウス追跡を有効化
         self.setMouseTracking(True)
         self.ui.frame.setMouseTracking(True)
 
-        # 画像表示用ラベル
         self.image_label = QLabel(self.ui.frame)
         self.image_label.setGeometry(
             0, 0, self.ui.frame.width(), self.ui.frame.height())
         self.image_label.setAlignment(Qt.AlignCenter)
-        # マウスイベントをメインウィンドウで受け取るために透過設定
         self.image_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
         self.history_layout = QVBoxLayout(self.ui.frame)
@@ -39,17 +56,21 @@ class MainWindow(QMainWindow):
         self.user_scale_factor = 1.0
         self.base_scale_factor = 1.0
 
-        # トリミング用
         self.cropping = False
         self.rect = QRect()
 
-        # パン操作用変数
         self.is_panning = False
         self.last_pan_pos = None
         self.pan_offset_x = 0
         self.pan_offset_y = 0
 
-        # ボタンイベント
+        self.text_editing = False
+        self.temp_text = ""
+        self.temp_text_pos = QPoint(0, 0)
+        self.temp_font = QFont()
+        self.temp_color = QColor(0, 0, 0)
+        self.text_dragging = False
+
         self.ui.trimming.clicked.connect(self.start_trimming)
         self.ui.revolution.clicked.connect(self.open_revolution_window)
         self.ui.brightness.clicked.connect(self.open_brightness_window)
@@ -57,6 +78,7 @@ class MainWindow(QMainWindow):
         self.ui.shadow.clicked.connect(self.open_shadow_window)
         self.ui.chroma.clicked.connect(self.open_chroma_window)
         self.ui.color.clicked.connect(self.open_color_window)
+        self.ui.text.clicked.connect(self.open_text_window)
 
     def set_image(self, image, fit_to_frame=True):
         self.image = np.ascontiguousarray(image)
@@ -79,10 +101,7 @@ class MainWindow(QMainWindow):
         frame_w = self.ui.frame.width()
         frame_h = self.ui.frame.height()
         scale_fit = min(frame_w / pixmap.width(), frame_h / pixmap.height())
-        if scale_fit < 1.0:
-            self.base_scale_factor = scale_fit
-        else:
-            self.base_scale_factor = 1.0
+        self.base_scale_factor = scale_fit if scale_fit < 1.0 else 1.0
 
     def update_image(self):
         if self.image is None:
@@ -94,7 +113,6 @@ class MainWindow(QMainWindow):
             self.display_image_cache = QPixmap.fromImage(qimg)
 
         final_scale = self.base_scale_factor * self.user_scale_factor
-        # 最大ズーム倍率を制限
         if final_scale > 5.0:
             final_scale = 5.0
             self.user_scale_factor = final_scale / self.base_scale_factor
@@ -110,7 +128,6 @@ class MainWindow(QMainWindow):
 
         fw = self.ui.frame.width()
         fh = self.ui.frame.height()
-
         self.image_label.setPixmap(scaled_pixmap)
         self.image_label.setGeometry(
             (fw - new_width) // 2 + self.pan_offset_x,
@@ -118,34 +135,50 @@ class MainWindow(QMainWindow):
             new_width,
             new_height
         )
+        self.update()
 
-    def wheelEvent(self, event: QWheelEvent):
+    def paintEvent(self, event):
+        super().paintEvent(event)
         if self.image is None:
             return
-        if event.angleDelta().y() > 0:
-            self.user_scale_factor *= 1.1
-        else:
-            self.user_scale_factor /= 1.1
-        self.update_image()
+        painter = QPainter(self)
+        painter.translate(self.image_label.pos())
+        if self.text_editing and self.temp_text:
+            painter.setFont(self.temp_font)
+            painter.setPen(self.temp_color)
+            painter.drawText(self.temp_text_pos, self.temp_text)
 
     def mousePressEvent(self, event):
-        if self.image is None:
+        if self.text_editing:
+            if self.temp_text:
+                text_rect = self.get_text_rect()
+                click_pos = event.pos() - self.image_label.pos()
+                if text_rect.contains(click_pos):
+                    self.text_dragging = True
+                    self.last_pan_pos = event.pos()
+                else:
+                    self.temp_text_pos = click_pos
             return
-
-        # 左または中クリックでパン開始
-        if not self.cropping and event.button() in [Qt.MouseButton.LeftButton, Qt.MouseButton.MiddleButton]:
-            self.is_panning = True
-            self.last_pan_pos = event.pos()
-            self.setCursor(QCursor(Qt.ClosedHandCursor))
-
-        # トリミング開始
-        if self.cropping and event.button() == Qt.MouseButton.LeftButton:
-            mapped_pos = self.image_label.mapFromParent(event.pos())
-            self.rect.setTopLeft(mapped_pos)
-            self.rect.setBottomRight(mapped_pos)
+        else:
+            if self.image is None:
+                return
+            if not self.cropping and event.button() in [Qt.LeftButton, Qt.MiddleButton]:
+                self.is_panning = True
+                self.last_pan_pos = event.pos()
+                self.setCursor(QCursor(Qt.ClosedHandCursor))
+            if self.cropping and event.button() == Qt.LeftButton:
+                mapped_pos = self.image_label.mapFromParent(event.pos())
+                self.rect.setTopLeft(mapped_pos)
+                self.rect.setBottomRight(mapped_pos)
 
     def mouseMoveEvent(self, event):
-        if self.is_panning and self.last_pan_pos and not self.cropping:
+        if self.text_dragging and self.text_editing and self.last_pan_pos:
+            dx = event.pos().x() - self.last_pan_pos.x()
+            dy = event.pos().y() - self.last_pan_pos.y()
+            self.temp_text_pos += QPoint(dx, dy)
+            self.last_pan_pos = event.pos()
+            self.update()
+        elif self.is_panning and self.last_pan_pos and not self.cropping:
             dx = event.pos().x() - self.last_pan_pos.x()
             dy = event.pos().y() - self.last_pan_pos.y()
             self.pan_offset_x += dx
@@ -158,21 +191,25 @@ class MainWindow(QMainWindow):
             self.update()
 
     def mouseReleaseEvent(self, event):
-        if self.is_panning and event.button() in [Qt.MouseButton.LeftButton, Qt.MouseButton.MiddleButton]:
+        if self.text_dragging and event.button() == Qt.LeftButton:
+            self.text_dragging = False
+        if self.is_panning and event.button() in [Qt.LeftButton, Qt.MiddleButton]:
             self.is_panning = False
             self.setCursor(QCursor(Qt.ArrowCursor))
-        if self.cropping and event.button() == Qt.MouseButton.LeftButton:
+        if self.cropping and event.button() == Qt.LeftButton:
             mapped_pos = self.image_label.mapFromParent(event.pos())
             self.rect.setBottomRight(mapped_pos)
             self.cropping = False
             self.setCursor(QCursor(Qt.ArrowCursor))
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if self.cropping:
-            painter = QPainter(self)
-            painter.setPen(QPen(Qt.green, 2, Qt.DashLine))
-            painter.drawRect(self.rect)
+    def wheelEvent(self, event: QWheelEvent):
+        if self.image is None:
+            return
+        if event.angleDelta().y() > 0:
+            self.user_scale_factor *= 1.1
+        else:
+            self.user_scale_factor /= 1.1
+        self.update_image()
 
     def start_trimming(self):
         if self.image is None:
@@ -271,14 +308,12 @@ class MainWindow(QMainWindow):
         color_window = ColorWindow(self.image, self)
         color_window.color_changed.connect(self.update_color_image)
         if color_window.exec_() == QDialog.Accepted:
-            # OKボタン時のみ自画像を更新
             final_image = color_window.get_adjusted_image()
             self.set_image(final_image, fit_to_frame=False)
 
     def update_color_image(self, r_scale, g_scale, b_scale):
         if self.image is None:
             return
-        # リアルタイムプレビュー (self.image は上書きしない)
         original = self.image.copy()
         temp_bgr = list(cv2.split(original))
         temp_bgr[0] = np.clip(temp_bgr[0].astype(
@@ -289,20 +324,61 @@ class MainWindow(QMainWindow):
             np.float32) * r_scale, 0, 255).astype(np.uint8)
         preview = cv2.merge(temp_bgr)
 
-        # 直接プレビューのみ表示 (display_image_cache や self.image は更新しない)
         h, w, _ = preview.shape
         qimg = QImage(preview.data, w, h, w * 3,
                       QImage.Format_RGB888).rgbSwapped()
         pixmap_preview = QPixmap.fromImage(qimg)
         self.image_label.setPixmap(pixmap_preview)
-
-        # 現在の拡大率を維持して更新
         self.image_label.setGeometry(
             (self.ui.frame.width() - pixmap_preview.width()) // 2 + self.pan_offset_x,
             (self.ui.frame.height() - pixmap_preview.height()) // 2 + self.pan_offset_y,
             pixmap_preview.width(),
             pixmap_preview.height()
         )
+
+    def open_text_window(self):
+        if self.image is None:
+            return
+        self.text_editing = True
+        tw = TextWindow(self)
+        tw.text_applied.connect(self.on_text_settings_applied)
+        tw.exec_()
+
+    def on_text_settings_applied(self, text, font, color, size):
+        self.temp_text = "ここにテキスト"
+        self.temp_font = font
+        self.temp_color = color
+        self.text_editing = True
+        self.update()
+
+    def get_text_rect(self):
+        fm = QFontMetrics(self.temp_font)
+        width = fm.horizontalAdvance(self.temp_text)
+        height = fm.height()
+        return QRect(self.temp_text_pos, QSize(width, height))
+
+    def confirm_text(self):
+        if not self.temp_text:
+            return
+        h, w, _ = self.image.shape
+        img_rgb = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
+        cv_img = QImage(img_rgb.data, w, h, w * 3, QImage.Format_RGB888)
+        px = QPixmap.fromImage(cv_img)
+
+        p = QPainter(px)
+        p.setFont(self.temp_font)
+        p.setPen(self.temp_color)
+        p.drawText(self.temp_text_pos, self.temp_text)
+        p.end()
+
+        new_img = px.toImage()
+        ptr = new_img.bits()
+        ptr.setsize(new_img.byteCount())
+        arr = np.array(ptr, dtype=np.uint8).reshape((h, w, 4))
+        final_bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
+        self.set_image(final_bgr, fit_to_frame=False)
+        self.text_editing = False
+        self.temp_text = ""
 
 def main():
     app = QApplication(sys.argv)

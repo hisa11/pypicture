@@ -20,8 +20,8 @@ class InfoDialog(QDialog):
         layout.addWidget(self.info_label)
 
 class HomeWindow(QMainWindow):
-    def __init__(self):
-        super(HomeWindow, self).__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.setFixedSize(self.size())
@@ -43,6 +43,7 @@ class HomeWindow(QMainWindow):
         self.main_window = MainWindow()
 
         self.init_menu()
+        self.setWindowTitle("PyPicture")  # ウィンドウタイトルを PyPicture に設定
 
     def init_menu(self):
         menubar = self.menuBar()

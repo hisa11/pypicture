@@ -83,6 +83,9 @@ class MainWindow(QMainWindow):
         self.ui.retouch.clicked.connect(self.open_retouch_window)
         self.ui.save.clicked.connect(self.open_save_window)  # 追加
 
+        self.setWindowTitle("PyPicture")  # ウィンドウタイトルを PyPicture に設定
+      
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.update_image()

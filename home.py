@@ -2,12 +2,22 @@
 import sys
 import cv2
 import numpy as np
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QVBoxLayout, QMessageBox
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QVBoxLayout, QMessageBox, QDialog
+from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
 from Ui_Addition import Ui_MainWindow
 from main import MainWindow
 import os
+
+class InfoDialog(QDialog):
+    def __init__(self, parent=None):
+        super(InfoDialog, self).__init__(parent)
+        self.setWindowTitle("情報")
+        self.setFixedSize(200, 100)
+        layout = QVBoxLayout(self)
+        self.info_label = QLabel("pypicture\nバージョン: 1.0", self)
+        self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.info_label)
 
 class HomeWindow(QMainWindow):
     def __init__(self):
@@ -16,29 +26,38 @@ class HomeWindow(QMainWindow):
         self.ui.setupUi(self)
         self.setFixedSize(self.size())
 
-       
         self.image_label = QLabel(self.ui.frame)
         self.image_label.setGeometry(
             0, 0, self.ui.frame.width(), self.ui.frame.height()
         )
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-       
         self.history_layout = QVBoxLayout(self.ui.frame)
         self.history_layout.addWidget(self.image_label)
 
         self.ui.pushButton.clicked.connect(self.create_new_image)
         self.ui.pushButton_2.clicked.connect(self.open_image)
 
-       
         self.history = []
 
-       
         self.main_window = MainWindow()
+
+        self.init_menu()
+
+    def init_menu(self):
+        menubar = self.menuBar()
+        info_menu = menubar.addMenu("情報")
+
+        info_action = QAction("情報", self)
+        info_action.triggered.connect(self.show_info_dialog)
+        info_menu.addAction(info_action)
+
+    def show_info_dialog(self):
+        dialog = InfoDialog(self)
+        dialog.exec()
 
     def create_new_image(self):
         try:
-           
             white_image = np.ones(
                 (self.ui.frame.height(), self.ui.frame.width(), 3), np.uint8
             ) * 255
@@ -51,16 +70,14 @@ class HomeWindow(QMainWindow):
 
     def open_image(self):
         try:
-            # Unicode パスの画像を読み込み、フレームに表示
             file_name, _ = QFileDialog.getOpenFileName(
                 self,
                 "画像を開く",
-                "",  # 初期ディレクトリを空に設定
+                "",
                 "画像ファイル (*.png *.jpg *.jpeg *.bmp *.gif *.tiff);;全てのファイル (*.*)"
             )
 
             if file_name:
-                # OpenCV を使用して画像を読み込む
                 image = cv2.imdecode(np.fromfile(
                     file_name, dtype=np.uint8), cv2.IMREAD_COLOR)
                 if image is None:

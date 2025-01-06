@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QDialog, QPushButton, QVBoxLayout, QMessageBox, QR
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QPixmap, QImage
 import os
+import sys
 
 class RetouchWindow(QDialog):
     retouch_completed = Signal(np.ndarray)
@@ -31,7 +32,17 @@ class RetouchWindow(QDialog):
 
     def retouch_faces(self):
         gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
-        cascade_path = './haarcascade_frontalface_default.xml'  # 正しいパスに変更
+
+        # 実行ファイルのディレクトリを取得
+        if getattr(sys, 'frozen', False):
+            # PyInstallerでパッケージ化された場合
+            base_path = sys._MEIPASS
+        else:
+            # 通常のスクリプト実行の場合
+            base_path = os.path.abspath(".")
+
+        cascade_path = os.path.join(
+            base_path, 'haarcascade_frontalface_default.xml')
         face_cascade = cv2.CascadeClassifier(cascade_path)
 
         # カスケード分類器のロード確認
@@ -50,7 +61,8 @@ class RetouchWindow(QDialog):
             face_roi = self.image[y:y + h, x:x + w]
             if self.mosaic_radio.isChecked():
                 # モザイクを適用
-                face_roi = cv2.resize(face_roi, (w // 10, h // 10))  # モザイクの範囲を大きく
+                face_roi = cv2.resize(
+                    face_roi, (w // 10, h // 10))  # モザイクの範囲を大きく
                 face_roi = cv2.resize(
                     face_roi, (w, h), interpolation=cv2.INTER_NEAREST)
             self.image[y:y + h, x:x + w] = face_roi

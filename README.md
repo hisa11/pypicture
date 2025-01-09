@@ -19,6 +19,7 @@ bmp, dib, pbm, pgm, ppm, pnm, pxm, pfm, sr, png, JPEG, WebP, AVIF, tiff
 
 # exe形式でダウンロード
 https://github.com/hisa11/pypicture/raw/refs/heads/main/PyPicture.exe
+※Windows セキュリティはこのexeファイルを重大なウイルスが仕込まれていると判断します。適宜除外してください。
 
 # 操作イメージ
 ![suteru](https://github.com/user-attachments/assets/8f7ebfe8-3c74-4585-9626-8d341ea8cc92)

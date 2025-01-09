@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 from Ui_Addition import Ui_MainWindow
 from main import MainWindow
 import os
+from PySide6.QtGui import QIcon
 
 class InfoDialog(QDialog):
     def __init__(self, parent=None):
@@ -44,6 +45,7 @@ class HomeWindow(QMainWindow):
 
         self.init_menu()
         self.setWindowTitle("PyPicture")  # ウィンドウタイトルを PyPicture に設定
+        self.setWindowIcon(QIcon("logo.ico"))
 
     def init_menu(self):
         menubar = self.menuBar()

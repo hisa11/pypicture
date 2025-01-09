@@ -77,7 +77,7 @@ class HomeWindow(QMainWindow):
                 self,
                 "画像を開く",
                 "",
-                "画像ファイル (*.png *.jpg *.jpeg *.bmp *.gif *.tiff);;全てのファイル (*.*)"
+                "画像ファイル (*.bmp *.dib *.pbm *.pgm *.ppm *.pnm *.pxm *.pfm *.sr *.png *.jpg *.jpeg *.webp *.avif *.tiff);;全てのファイル (*.*)"
             )
 
             if file_name:

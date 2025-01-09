@@ -17,7 +17,7 @@ class SaveWindow(QDialog):
         layout.addWidget(self.extension_label)
 
         self.extension_combo = QComboBox()
-        self.extension_combo.addItems([".png", ".jpg", ".bmp", ".tiff"])
+        self.extension_combo.addItems([".bmp", ".dib", ".pbm", ".pgm", ".ppm", ".pnm", ".pxm", ".pfm", ".sr", ".png", ".jpg", ".jpeg", ".webp", ".avif", ".tiff"])
         layout.addWidget(self.extension_combo)
 
         # 画質選択
@@ -37,7 +37,7 @@ class SaveWindow(QDialog):
     def save_image(self):
         options = QFileDialog.Options()
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "画像を保存", "", "All Files (*);;PNG Files (*.png);;JPEG Files (*.jpg);;BMP Files (*.bmp);;TIFF Files (*.tiff)", options=options)
+            self, "画像を保存", "", "All Files (*);;BMP Files (*.bmp *.dib);;PBM Files (*.pbm);;PGM Files (*.pgm);;PPM Files (*.ppm);;PNM Files (*.pnm);;PXM Files (*.pxm);;PFM Files (*.pfm);;SR Files (*.sr);;PNG Files (*.png);;JPEG Files (*.jpg *.jpeg);;WEBP Files (*.webp);;AVIF Files (*.avif);;TIFF Files (*.tiff)", options=options)
         if file_path:
             extension = self.extension_combo.currentText()
             quality = self.quality_slider.value()

@@ -5,8 +5,9 @@ import numpy as np
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QVBoxLayout, QMessageBox, QDialog
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
+
 from Ui_Addition import Ui_MainWindow
-from main import MainWindow
+from pages.py.main import MainWindow
 import os
 from PySide6.QtGui import QIcon
 

@@ -12,17 +12,17 @@ from PySide6.QtGui import (
 from PySide6.QtCore import Qt, QRect, QPoint, QSize, QTimer
 
 
-from picture import Ui_MainWindow
-from revolution import RevolutionWindow
-from brightness import BrightnessWindow
-from contrast import ContrastWindow
-from shadow import ShadowWindow
-from chroma import ChromaWindow
-from color import ColorWindow
-from text import TextWindow
-from sticker import StickerWindow
-from retouch import RetouchWindow
-from save import SaveWindow
+from pages.ui.picture import Ui_MainWindow
+from pages.py.feature.revolution import RevolutionWindow
+from pages.py.feature.brightness import BrightnessWindow
+from pages.py.feature.contrast import ContrastWindow
+from pages.py.feature.shadow import ShadowWindow
+from pages.py.feature.chroma import ChromaWindow
+from pages.py.feature.color import ColorWindow
+from pages.py.feature.text import TextWindow
+from pages.py.feature.sticker import StickerWindow
+from pages.py.feature.retouch import RetouchWindow
+from pages.py.feature.save import SaveWindow
 
 class MainWindow(QMainWindow):
     def __init__(self):

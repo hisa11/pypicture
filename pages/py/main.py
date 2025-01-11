@@ -2,12 +2,12 @@ import sys
 import numpy as np
 import cv2
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QVBoxLayout, QDialog, QFileDialog,
+    QApplication, QMainWindow, QLabel, QDialog, QFileDialog,
     QMessageBox, QWidget
 )
 from PySide6.QtGui import (
-    QPixmap, QImage, QWheelEvent, QPainter, QPen, QCursor,
-    QFont, QColor, QFontMetrics
+    QPixmap, QImage, QWheelEvent, QPainter, QCursor,
+    QFont, QColor, QFontMetrics, QPen
 )
 from PySide6.QtCore import Qt, QRect, QPoint, QSize, QTimer
 
@@ -24,6 +24,7 @@ from pages.py.feature.sticker import StickerWindow
 from pages.py.feature.retouch import RetouchWindow
 from pages.py.feature.save import SaveWindow
 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
@@ -34,11 +35,12 @@ class MainWindow(QMainWindow):
         self.ui.frame.setMouseTracking(True)
 
         self.image_label = QLabel(self.ui.frame)
-        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
-        self.history_layout = QVBoxLayout(self.ui.frame)
-        self.history_layout.addWidget(self.image_label)
+        # レイアウト削除（手動セットGeometryを活かすため）
+        # self.history_layout = QVBoxLayout(self.ui.frame)
+        # self.history_layout.addWidget(self.image_label)
 
         self.setFixedSize(self.size())
 
@@ -47,17 +49,18 @@ class MainWindow(QMainWindow):
 
         self.user_scale_factor = 1.0
         self.base_scale_factor = 1.0
-        self.cropping = False
-        self.rect = QRect()
 
+        # パン用
         self.is_panning = False
         self.last_pan_pos = QPoint()
         self.pan_offset_x = 0
         self.pan_offset_y = 0
-
-        # パン用の開始位置を追加
         self.pan_start_pos = QPoint()
         self.pan_active = False
+
+        # トリミング用
+        self.cropping = False
+        self.trim_rect = QRect()
 
         # テキスト編集
         self.text_editing = False
@@ -81,7 +84,7 @@ class MainWindow(QMainWindow):
         self.pan_timer = QTimer(self)
         self.pan_timer.setSingleShot(True)
         self.pan_timer.timeout.connect(self.start_panning)
-        self.pan_timer_interval = 300  # ミリ秒
+        self.pan_timer_interval = 100  # ミリ秒
 
         # ボタン
         self.ui.trimming.clicked.connect(self.start_trimming)
@@ -119,45 +122,59 @@ class MainWindow(QMainWindow):
             return
         h, w, _ = self.image.shape
         qimg = QImage(self.image.data, w, h, w * 3,
-                      QImage.Format_RGB888).rgbSwapped()
+                      QImage.Format.Format_RGB888).rgbSwapped()
         pixmap = QPixmap.fromImage(qimg)
         frame_w = self.ui.frame.width()
         frame_h = self.ui.frame.height()
         scale_fit = min(frame_w / pixmap.width(), frame_h / pixmap.height())
-        self.base_scale_factor = scale_fit if scale_fit < 1.0 else 1.0
-
-    def update_image(self):
-        if self.image is None:
-            return
-        if self.display_image_cache is None:
-            h, w, _ = self.image.shape
-            qimg = QImage(self.image.data, w, h, w * 3,
-                          QImage.Format_RGB888).rgbSwapped()
-            self.display_image_cache = QPixmap.fromImage(qimg)
+        self.base_scale_factor = scale_fit if scale_fit < 1.0 else 1.
 
         final_scale = self.base_scale_factor * self.user_scale_factor
+        # 最大5倍、最小0.5倍に制限
         if final_scale > 5.0:
-            final_scale = 5.0
-            self.user_scale_factor = final_scale / self.base_scale_factor
+            self.user_scale_factor = 5.0 / self.base_scale_factor
+        if final_scale < 0.1:
+            self.user_scale_factor = 0.1 / self.base_scale_factor
 
-        new_width = int(self.display_image_cache.width() * final_scale)
-        new_height = int(self.display_image_cache.height() * final_scale)
-        scaled_pixmap = self.display_image_cache.scaled(
-            new_width, new_height,
+        h_img, w_img, _ = self.image.shape
+        scaled_w = int(w_img * final_scale)
+        scaled_h = int(h_img * final_scale)
+
+        fw = self.ui.frame.width()
+        fh = self.ui.frame.height()
+
+        x_display = (fw - scaled_w) // 2 + self.pan_offset_x
+        y_display = (fh - scaled_h) // 2 + self.pan_offset_y
+        display_rect = QRect(x_display, y_display, scaled_w, scaled_h)
+        frame_rect = QRect(0, 0, fw, fh)
+
+        clipped = display_rect.intersected(frame_rect)
+        if clipped.isEmpty():
+            self.image_label.clear()
+            return
+
+        clipped_x = clipped.x() - x_display
+        clipped_y = clipped.y() - y_display
+        ratio = 1.0 / final_scale
+
+        src_x = int(clipped_x * ratio)
+        src_y = int(clipped_y * ratio)
+        src_w = int(clipped.width() * ratio)
+        src_h = int(clipped.height() * ratio)
+
+        src_roi = self.image[src_y:src_y + src_h, src_x:src_x + src_w].copy()
+        qimg_roi = QImage(src_roi.data, src_roi.shape[1], src_roi.shape[0],
+                          src_roi.shape[1] * 3, QImage.Format.Format_RGB888).rgbSwapped()
+        pixmap_roi = QPixmap.fromImage(qimg_roi).scaled(
+            clipped.width(), clipped.height(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation
         )
 
-        fw = self.ui.frame.width()
-        fh = self.ui.frame.height()
-        self.image_label.setPixmap(scaled_pixmap)
-        self.image_label.setGeometry(
-            (fw - new_width) // 2 + self.pan_offset_x,
-            (fh - new_height) // 2 + self.pan_offset_y,
-            new_width,
-            new_height
-        )
+        self.image_label.setPixmap(pixmap_roi)
+        self.image_label.setGeometry(clipped)
         self.update()
+        # print(f"Partial update: {clipped}, src=({src_x},{src_y},{src_w},{src_h})")
 
     def open_save_window(self):
         if self.image is None:
@@ -183,26 +200,34 @@ class MainWindow(QMainWindow):
         if self.image is None:
             return
 
-        if event.button() == Qt.LeftButton:
+        # トリミング中は視点移動を無効化
+        if self.cropping and event.button() == Qt.MouseButton.LeftButton:
+            self.trim_start_pos = event.pos()
+            self.trim_rect = QRect(event.pos(), QSize())
+            self.setCursor(QCursor(Qt.CrossCursor))
+            return
+
+        if event.button() == Qt.MouseButton.LeftButton:
             self.pan_start_pos = event.pos()
             self.pan_timer.start(self.pan_timer_interval)
-        elif event.button() == Qt.MiddleButton:
+        elif event.button() == Qt.MouseButton.MiddleButton:
             self.is_panning = True
             self.last_pan_pos = event.pos()
-            self.setCursor(QCursor(Qt.ClosedHandCursor))
-
-        if self.cropping and event.button() == Qt.LeftButton:
-            mapped_pos = self.image_label.mapFromParent(event.pos())
-            self.rect.setTopLeft(mapped_pos)
-            self.rect.setBottomRight(mapped_pos)
+            self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
 
     def start_panning(self):
-        # 長押し状態でパンを開始
         self.is_panning = True
         self.last_pan_pos = self.pan_start_pos
-        self.setCursor(QCursor(Qt.ClosedHandCursor))
+        self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
 
     def mouseMoveEvent(self, event):
+        # トリミング中の矩形描画
+        if self.cropping:
+            current_pos = event.pos()
+            self.trim_rect.setBottomRight(current_pos)
+            self.update()
+            return
+
         if self.is_panning:
             delta = event.pos() - self.last_pan_pos
             self.pan_offset_x += delta.x()
@@ -211,37 +236,120 @@ class MainWindow(QMainWindow):
             self.update_image()
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             if self.pan_timer.isActive():
                 self.pan_timer.stop()
             if self.is_panning:
                 self.is_panning = False
-                self.setCursor(QCursor(Qt.ArrowCursor))
-        elif event.button() == Qt.MiddleButton:
+                self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+        elif event.button() == Qt.MouseButton.MiddleButton:
             if self.is_panning:
                 self.is_panning = False
-                self.setCursor(QCursor(Qt.ArrowCursor))
+                self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
 
-        if self.cropping and event.button() == Qt.LeftButton:
-            mapped_pos = self.image_label.mapFromParent(event.pos())
-            self.rect.setBottomRight(mapped_pos)
+        if self.cropping and event.button() == Qt.MouseButton.LeftButton:
+            self.trim_end_pos = event.pos()
             self.cropping = False
-            self.setCursor(QCursor(Qt.ArrowCursor))
+            self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+            self.perform_trimming()
 
     def wheelEvent(self, event: QWheelEvent):
         if self.image is None:
             return
+        old_scale = self.user_scale_factor
         if event.angleDelta().y() > 0:
             self.user_scale_factor *= 1.1
         else:
             self.user_scale_factor /= 1.1
+        ratio = self.user_scale_factor / old_scale
+        self.pan_offset_x = int(self.pan_offset_x * ratio)
+        self.pan_offset_y = int(self.pan_offset_y * ratio)
         self.update_image()
 
     def start_trimming(self):
         if self.image is None:
+            QMessageBox.warning(self, "警告", "画像がありません。")
             return
         self.cropping = True
-        self.setCursor(QCursor(Qt.CrossCursor))
+        self.setCursor(QCursor(Qt.CursorShape.CrossCursor))
+        self.trim_rect = QRect()
+        self.update()
+
+    def perform_trimming(self):
+        if self.trim_rect.isNull():
+            return
+
+        # 画像とウィンドウのサイズを取得
+        fw = self.ui.frame.width()
+        fh = self.ui.frame.height()
+        img_h, img_w, _ = self.image.shape
+
+        # 表示中の画像のスケールとオフセットを計算
+        final_scale = self.base_scale_factor * self.user_scale_factor
+        scaled_w = int(img_w * final_scale)
+        scaled_h = int(img_h * final_scale)
+
+        x_display = (fw - scaled_w) // 2 + self.pan_offset_x
+        y_display = (fh - scaled_h) // 2 + self.pan_offset_y
+
+        # トリミング矩形を画像座標に変換
+        x1 = (self.trim_rect.left() - x_display) / final_scale
+        y1 = (self.trim_rect.top() - y_display) / final_scale
+        x2 = (self.trim_rect.right() - x_display) / final_scale
+        y2 = (self.trim_rect.bottom() - y_display) / final_scale
+
+        # 座標を整数にし、画像範囲内に制限
+        x1, x2 = sorted([max(0, min(int(x1), img_w - 1)),
+                        max(0, min(int(x2), img_w - 1))])
+        y1, y2 = sorted([max(0, min(int(y1), img_h - 1)),
+                        max(0, min(int(y2), img_h - 1))])
+
+        if x2 - x1 < 10 or y2 - y1 < 10:
+            QMessageBox.warning(self, "警告", "選択範囲が小さすぎます。")
+            self.update_image()
+            return
+
+        # トリミング実行
+        roi = self.image[y1:y2, x1:x2].copy()
+        self.set_image(roi, fit_to_frame=True)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.cropping and not self.trim_rect.isNull():
+            painter = QPainter(self)
+            painter.setPen(QPen(Qt.GlobalColor.green, 2))
+            painter.drawRect(self.trim_rect)
+            painter.end()
+
+        if self.image is None:
+            return
+        painter = QPainter(self)
+        painter.translate(self.image_label.pos())
+
+        if getattr(self, "text_editing", False) and getattr(self, "temp_text", ""):
+            painter.setFont(self.temp_font)
+            painter.setPen(self.temp_color)
+            painter.drawText(self.temp_text_pos, self.temp_text)
+
+        if getattr(self, "sticker_editing", False) and not self.temp_sticker.isNull():
+            scaled_width = self.temp_sticker.width() * self.temp_sticker_scale
+            scaled_height = self.temp_sticker.height() * self.temp_sticker_scale
+            sticker_scaled = self.temp_sticker.scaled(
+                scaled_width, scaled_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self.temp_sticker_pos.setX(
+                max(0, min(self.temp_sticker_pos.x(),
+                    self.ui.frame.width() - scaled_width))
+            )
+            self.temp_sticker_pos.setY(
+                max(0, min(self.temp_sticker_pos.y(),
+                    self.ui.frame.height() - scaled_height))
+            )
+            painter.drawPixmap(self.temp_sticker_pos, sticker_scaled)
+
+        painter.end()
 
     def open_revolution_window(self):
         if self.image is None:
@@ -360,7 +468,7 @@ class MainWindow(QMainWindow):
 
         h, w, _ = preview.shape
         qimg = QImage(preview.data, w, h, w * 3,
-                      QImage.Format_RGB888).rgbSwapped()
+                      QImage.Format.Format_RGB888).rgbSwapped()
         pixmap_preview = QPixmap.fromImage(qimg)
         self.image_label.setPixmap(pixmap_preview)
         self.image_label.setGeometry(
@@ -369,6 +477,7 @@ class MainWindow(QMainWindow):
             pixmap_preview.width(),
             pixmap_preview.height()
         )
+        self.update()
 
     def open_text_window(self):
         if self.image is None:
@@ -396,14 +505,14 @@ class MainWindow(QMainWindow):
             return
         h, w, _ = self.image.shape
         img_rgb = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
-        cv_img = QImage(img_rgb.data, w, h, w * 3, QImage.Format_RGB888)
+        cv_img = QImage(img_rgb.data, w, h, w * 3, QImage.Format.Format_RGB888)
         px = QPixmap.fromImage(cv_img)
 
-        p = QPainter(px)
-        p.setFont(self.temp_font)
-        p.setPen(self.temp_color)
-        p.drawText(self.temp_text_pos, self.temp_text)
-        p.end()
+        painter = QPainter(px)
+        painter.setFont(self.temp_font)
+        painter.setPen(self.temp_color)
+        painter.drawText(self.temp_text_pos, self.temp_text)
+        painter.end()
 
         new_img = px.toImage()
         ptr = new_img.bits()
@@ -428,19 +537,76 @@ class MainWindow(QMainWindow):
         self.sticker_editing = True
         self.update()
 
+    def perform_trimming(self):
+        if self.trim_rect.isNull():
+            return
+
+        # フレームと画像のサイズ取得
+        fw = self.ui.frame.width()
+        fh = self.ui.frame.height()
+        img_h, img_w, _ = self.image.shape
+
+        # 表示中の画像のスケールとオフセットを計算
+        final_scale = self.base_scale_factor * self.user_scale_factor
+        scaled_w = int(img_w * final_scale)
+        scaled_h = int(img_h * final_scale)
+
+        x_display = (fw - scaled_w) // 2 + self.pan_offset_x
+        y_display = (fh - scaled_h) // 2 + self.pan_offset_y
+
+        # トリミング矩形を画像座標に変換
+        x1 = (self.trim_rect.left() - x_display) / final_scale
+        y1 = (self.trim_rect.top() - y_display) / final_scale
+        x2 = (self.trim_rect.right() - x_display) / final_scale
+        y2 = (self.trim_rect.bottom() - y_display) / final_scale
+
+        # 座標を整数にし、画像範囲内に制限
+        x1, x2 = sorted([max(0, min(int(x1), img_w - 1)),
+                        max(0, min(int(x2), img_w - 1))])
+        y1, y2 = sorted([max(0, min(int(y1), img_h - 1)),
+                        max(0, min(int(y2), img_h - 1))])
+
+        if x2 - x1 < 10 or y2 - y1 < 10:
+            QMessageBox.warning(self, "警告", "選択範囲が小さすぎます。")
+            self.update_image()
+            return
+
+        # トリミング実行
+        roi = self.image[y1:y2, x1:x2].copy()
+        self.set_image(roi, fit_to_frame=True)
+
+    def start_trimming(self):
+        if self.image is None:
+            QMessageBox.warning(self, "警告", "画像がありません。")
+            return
+        self.cropping = True
+        self.setCursor(QCursor(Qt.CursorShape.CrossCursor))
+        self.trim_rect = QRect()
+        self.update()
+
     def paintEvent(self, event):
         super().paintEvent(event)
+        # トリミング矩形の描画
+        if self.cropping and not self.trim_rect.isNull():
+            painter = QPainter(self)
+            painter.setPen(QPen(Qt.GlobalColor.green, 2))
+            painter.drawRect(self.trim_rect)
+            painter.end()
+
         if self.image is None:
             return
+
         painter = QPainter(self)
         painter.translate(self.image_label.pos())
 
-        if self.text_editing and self.temp_text:
+        # テキスト描画
+        if getattr(self, "text_editing", False) and getattr(self, "temp_text", ""):
             painter.setFont(self.temp_font)
             painter.setPen(self.temp_color)
             painter.drawText(self.temp_text_pos, self.temp_text)
 
-        if self.sticker_editing and not self.temp_sticker.isNull():
+        # ステッカー描画
+        if getattr(self, "sticker_editing", False) and not self.temp_sticker.isNull():
             scaled_width = self.temp_sticker.width() * self.temp_sticker_scale
             scaled_height = self.temp_sticker.height() * self.temp_sticker_scale
             sticker_scaled = self.temp_sticker.scaled(
@@ -448,14 +614,205 @@ class MainWindow(QMainWindow):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
-
             self.temp_sticker_pos.setX(
-                max(0, min(self.temp_sticker_pos.x(), self.ui.frame.width() - scaled_width)))
+                max(0, min(self.temp_sticker_pos.x(),
+                    self.ui.frame.width() - scaled_width))
+            )
             self.temp_sticker_pos.setY(
-                max(0, min(self.temp_sticker_pos.y(), self.ui.frame.height() - scaled_height)))
+                max(0, min(self.temp_sticker_pos.y(),
+                    self.ui.frame.height() - scaled_height))
+            )
             painter.drawPixmap(self.temp_sticker_pos, sticker_scaled)
 
         painter.end()
+
+    def update_image(self):
+        if self.image is None:
+            self.image_label.clear()
+            return
+
+        final_scale = self.base_scale_factor * self.user_scale_factor
+        # 最大5倍、最小0.5倍に制限
+        if final_scale > 5.0:
+            final_scale = 5.0
+            self.user_scale_factor = final_scale / self.base_scale_factor
+        if final_scale < 0.5:
+            final_scale = 0.5
+            self.user_scale_factor = final_scale / self.base_scale_factor
+
+        h_img, w_img, _ = self.image.shape
+        scaled_w = int(w_img * final_scale)
+        scaled_h = int(h_img * final_scale)
+
+        fw = self.ui.frame.width()
+        fh = self.ui.frame.height()
+
+        x_display = (fw - scaled_w) // 2 + self.pan_offset_x
+        y_display = (fh - scaled_h) // 2 + self.pan_offset_y
+        display_rect = QRect(x_display, y_display, scaled_w, scaled_h)
+        frame_rect = QRect(0, 0, fw, fh)
+
+        clipped = display_rect.intersected(frame_rect)
+        if clipped.isEmpty():
+            self.image_label.clear()
+            return
+
+        clipped_x = clipped.x() - x_display
+        clipped_y = clipped.y() - y_display
+        ratio = 1.0 / final_scale
+
+        src_x = int(clipped_x * ratio)
+        src_y = int(clipped_y * ratio)
+        src_w = int(clipped.width() * ratio)
+        src_h = int(clipped.height() * ratio)
+
+        src_roi = self.image[src_y:src_y + src_h, src_x:src_x + src_w].copy()
+        qimg_roi = QImage(src_roi.data, src_roi.shape[1], src_roi.shape[0],
+                          src_roi.shape[1] * 3, QImage.Format.Format_RGB888).rgbSwapped()
+        pixmap_roi = QPixmap.fromImage(qimg_roi).scaled(
+            clipped.width(), clipped.height(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        )
+
+        self.image_label.setPixmap(pixmap_roi)
+        self.image_label.setGeometry(clipped)
+        self.update()
+
+    def mouseMoveEvent(self, event):
+        if self.cropping:
+            current_pos = event.pos()
+            self.trim_rect.setBottomRight(current_pos)
+            self.update()
+            return
+
+        if self.is_panning:
+            delta = event.pos() - self.last_pan_pos
+            self.pan_offset_x += delta.x()
+            self.pan_offset_y += delta.y()
+            self.last_pan_pos = event.pos()
+            self.update_image()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self.pan_timer.isActive():
+                self.pan_timer.stop()
+            if self.is_panning:
+                self.is_panning = False
+                self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+        elif event.button() == Qt.MouseButton.MiddleButton:
+            if self.is_panning:
+                self.is_panning = False
+                self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+
+        if self.cropping and event.button() == Qt.MouseButton.LeftButton:
+            self.trim_end_pos = event.pos()
+            self.cropping = False
+            self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+            self.perform_trimming()
+
+    def start_trimming(self):
+        if self.image is None:
+            QMessageBox.warning(self, "警告", "画像がありません。")
+            return
+        self.cropping = True
+        self.setCursor(QCursor(Qt.CursorShape.CrossCursor))
+        self.trim_rect = QRect()
+        self.update()
+
+    def perform_trimming(self):
+        if self.trim_rect.isNull():
+            return
+
+        # フレームと画像のサイズ取得
+        fw = self.ui.frame.width()
+        fh = self.ui.frame.height()
+        img_h, img_w, _ = self.image.shape
+
+        # 表示中の画像のスケールとオフセットを計算
+        final_scale = self.base_scale_factor * self.user_scale_factor
+        scaled_w = int(img_w * final_scale)
+        scaled_h = int(img_h * final_scale)
+
+        x_display = (fw - scaled_w) // 2 + self.pan_offset_x
+        y_display = (fh - scaled_h) // 2 + self.pan_offset_y
+
+        # トリミング矩形を画像座標に変換
+        x1 = (self.trim_rect.left() - x_display) / final_scale
+        y1 = (self.trim_rect.top() - y_display) / final_scale
+        x2 = (self.trim_rect.right() - x_display) / final_scale
+        y2 = (self.trim_rect.bottom() - y_display) / final_scale
+
+        # 座標を整数にし、画像範囲内に制限
+        x1, x2 = sorted([max(0, min(int(x1), img_w - 1)),
+                        max(0, min(int(x2), img_w - 1))])
+        y1, y2 = sorted([max(0, min(int(y1), img_h - 1)),
+                        max(0, min(int(y2), img_h - 1))])
+
+        if x2 - x1 < 10 or y2 - y1 < 10:
+            QMessageBox.warning(self, "警告", "選択範囲が小さすぎます。")
+            self.update_image()
+            return
+
+        # トリミング実行
+        roi = self.image[y1:y2, x1:x2].copy()
+        self.set_image(roi, fit_to_frame=True)
+
+    def wheelEvent(self, event: QWheelEvent):
+        if self.image is None:
+            return
+        old_scale = self.user_scale_factor
+        if event.angleDelta().y() > 0:
+            self.user_scale_factor *= 1.1
+        else:
+            self.user_scale_factor /= 1.1
+        ratio = self.user_scale_factor / old_scale
+        self.pan_offset_x = int(self.pan_offset_x * ratio)
+        self.pan_offset_y = int(self.pan_offset_y * ratio)
+        self.update_image()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        # トリミング矩形の描画
+        if self.cropping and not self.trim_rect.isNull():
+            painter = QPainter(self)
+            painter.setPen(QPen(Qt.GlobalColor.green, 2))
+            painter.drawRect(self.trim_rect)
+            painter.end()
+
+        if self.image is None:
+            return
+
+        painter = QPainter(self)
+        painter.translate(self.image_label.pos())
+
+        # テキスト描画
+        if getattr(self, "text_editing", False) and getattr(self, "temp_text", ""):
+            painter.setFont(self.temp_font)
+            painter.setPen(self.temp_color)
+            painter.drawText(self.temp_text_pos, self.temp_text)
+
+        # ステッカー描画
+        if getattr(self, "sticker_editing", False) and not self.temp_sticker.isNull():
+            scaled_width = self.temp_sticker.width() * self.temp_sticker_scale
+            scaled_height = self.temp_sticker.height() * self.temp_sticker_scale
+            sticker_scaled = self.temp_sticker.scaled(
+                scaled_width, scaled_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self.temp_sticker_pos.setX(
+                max(0, min(self.temp_sticker_pos.x(),
+                    self.ui.frame.width() - scaled_width))
+            )
+            self.temp_sticker_pos.setY(
+                max(0, min(self.temp_sticker_pos.y(),
+                    self.ui.frame.height() - scaled_height))
+            )
+            painter.drawPixmap(self.temp_sticker_pos, sticker_scaled)
+
+        painter.end()
+
 
 def main():
     app = QApplication(sys.argv)

@@ -18,7 +18,7 @@ class StickerWindow(QDialog):
 
         # ステッカー画像プレビュー
         self.preview_label = QLabel("プレビュー: なし")
-        self.preview_label.setAlignment(Qt.AlignCenter)
+        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.selected_pixmap = QPixmap()
 
         # ファイルから選択ボタン
@@ -53,7 +53,7 @@ class StickerWindow(QDialog):
                 self.preview_label.setText("")
                 self.preview_label.setPixmap(
                     self.selected_pixmap.scaled(
-                        100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                        100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
                     )
                 )
 
@@ -68,7 +68,7 @@ class StickerWindow(QDialog):
                 self.preview_label.setText("")
                 self.preview_label.setPixmap(
                     self.selected_pixmap.scaled(
-                        100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                        100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
                     )
                 )
         else:

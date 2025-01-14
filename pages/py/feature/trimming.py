@@ -28,6 +28,7 @@ class Trimming:
             return None
 
         # フレームと画像のサイズ取得
+        self.trim_trimming = Trimming(self.image, self)
         fw = self.parent.ui.frame.width()
         fh = self.parent.ui.frame.height()
         img_h, img_w, _ = self.image.shape
@@ -59,4 +60,9 @@ class Trimming:
 
         # トリミング実行
         roi = self.image[y1:y2, x1:x2].copy()
+
+        # トリミング後の画像を元の位置に戻すためのオフセット調整
+        self.parent.pan_offset_x += int((self.trim_rect.left() - x_display))
+        self.parent.pan_offset_y += int((self.trim_rect.top() - y_display))
+
         return roi

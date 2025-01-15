@@ -25,6 +25,37 @@ from pages.py.feature.retouch import RetouchWindow
 from pages.py.feature.save import SaveWindow
 
 
+class ImageLabel(QLabel):
+    def __init__(self, parent=None, main_window=None):
+        super().__init__(parent)
+        self.main_window = main_window
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        # テキスト描画
+        if self.main_window and getattr(self.main_window, "text_editing", False) and self.main_window.temp_text:
+            painter.setFont(self.main_window.temp_font)
+            painter.setPen(self.main_window.temp_color)
+            painter.drawText(self.main_window.temp_text_pos, self.main_window.temp_text)
+        # ステッカー描画はドラッグ中かスケーリング中のときのみ
+        if self.main_window and self.main_window.sticker_editing and not self.main_window.temp_sticker.isNull():
+            sw = self.main_window.temp_sticker.width() * self.main_window.temp_sticker_scale
+            sh = self.main_window.temp_sticker.height() * self.main_window.temp_sticker_scale
+            # フレーム外へ行かないよう補正
+            self.main_window.temp_sticker_pos.setX(
+                max(0, min(self.main_window.temp_sticker_pos.x(), self.width() - sw))
+            )
+            self.main_window.temp_sticker_pos.setY(
+                max(0, min(self.main_window.temp_sticker_pos.y(), self.height() - sh))
+            )
+            sticker_scaled = self.main_window.temp_sticker.scaled(
+                sw, sh, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
+            painter.drawPixmap(self.main_window.temp_sticker_pos, sticker_scaled)
+        painter.end()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
@@ -34,7 +65,7 @@ class MainWindow(QMainWindow):
         self.setMouseTracking(True)
         self.ui.frame.setMouseTracking(True)
 
-        self.image_label = QLabel(self.ui.frame)
+        self.image_label = ImageLabel(self.ui.frame, self)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
@@ -79,6 +110,11 @@ class MainWindow(QMainWindow):
         self.temp_sticker_scale = 1.0
         self.scale_handle_rect = QRect()
         self.scale_handle_size = 20
+        self.sticker_drag_offset = QPoint(0, 0)
+
+        self.is_scaling_sticker = False
+        self.sticker_scale_start_pos = QPoint()
+        self.sticker_scale_start_value = 1.0
 
         # パン用タイマー
         self.pan_timer = QTimer(self)
@@ -185,15 +221,30 @@ class MainWindow(QMainWindow):
         save_window.exec_()
 
     def save_image(self, file_path, quality):
+        # ステッカーが未確定なら先に合成
+        if self.sticker_editing:
+            self.confirm_sticker()
+
         if self.image is None:
             QMessageBox.warning(self, "警告", "画像がロードされていません。")
             return
+
         extension = file_path.split('.')[-1].lower()
+        # PBM形式にカラー画像を直接保存しようとするとエラーになるため、グレースケールへ変換
+        if extension == 'pbm':
+            if len(self.image.shape) == 3 and self.image.shape[2] == 3:
+                gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+                cv2.imwrite(file_path, gray)
+            else:
+                cv2.imwrite(file_path, self.image)
+            QMessageBox.information(self, "完了", "PBM形式として保存されました。")
+            return
+
         if extension in ['jpg', 'jpeg']:
-            cv2.imwrite(file_path, self.image, [
-                        int(cv2.IMWRITE_JPEG_QUALITY), quality])
+            cv2.imwrite(file_path, self.image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
         else:
             cv2.imwrite(file_path, self.image)
+
         QMessageBox.information(self, "完了", "画像が保存されました。")
 
     def mousePressEvent(self, event):
@@ -207,10 +258,40 @@ class MainWindow(QMainWindow):
             self.setCursor(QCursor(Qt.CursorShape.CrossCursor))
             return
 
+        if self.sticker_editing and event.button() == Qt.MouseButton.LeftButton:
+            final_scale, x_disp, y_disp = self.get_display_transform()
+            # ステッカーの画面上座標を計算
+            sx = x_disp + int(self.temp_sticker_pos.x() * final_scale)
+            sy = y_disp + int(self.temp_sticker_pos.y() * final_scale)
+            scaled_w = int(self.temp_sticker.width() * self.temp_sticker_scale * final_scale)
+            scaled_h = int(self.temp_sticker.height() * self.temp_sticker_scale * final_scale)
+            sticker_rect = QRect(QPoint(sx, sy), QSize(scaled_w, scaled_h))
+
+            # 右下隅のスケールハンドル
+            handle_size = 20
+            scale_handle = QRect(
+                sticker_rect.right() - handle_size,
+                sticker_rect.bottom() - handle_size,
+                handle_size,
+                handle_size
+            )
+
+            if scale_handle.contains(event.pos()):
+                self.is_scaling_sticker = True
+                self.sticker_scale_start_pos = event.pos()
+                self.sticker_scale_start_value = self.temp_sticker_scale
+                return
+            if sticker_rect.contains(event.pos()):
+                self.sticker_dragging = True
+                self.sticker_drag_offset = event.pos() - sticker_rect.topLeft()
+                return
+
+        # 左クリックでステッカー領域外の場合はパン開始
         if event.button() == Qt.MouseButton.LeftButton:
             self.pan_start_pos = event.pos()
             self.pan_timer.start(self.pan_timer_interval)
-        elif event.button() == Qt.MouseButton.MiddleButton:
+
+        if event.button() == Qt.MouseButton.MiddleButton:
             self.is_panning = True
             self.last_pan_pos = event.pos()
             self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
@@ -221,13 +302,7 @@ class MainWindow(QMainWindow):
         self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            if self.pan_timer.isActive():
-                self.pan_timer.stop()
-            if self.is_panning:
-                self.is_panning = False
-                self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
-        elif event.button() == Qt.MouseButton.MiddleButton:
+        if event.button() == Qt.MouseButton.MiddleButton:
             if self.is_panning:
                 self.is_panning = False
                 self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
@@ -237,6 +312,22 @@ class MainWindow(QMainWindow):
             self.cropping = False
             self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
             self.perform_trimming()
+
+        if self.is_scaling_sticker and event.button() == Qt.MouseButton.LeftButton:
+            self.is_scaling_sticker = False
+            # confirm_sticker呼び出しを削除して、後から変更可能にする
+            return
+        if self.sticker_dragging and event.button() == Qt.MouseButton.LeftButton:
+            self.sticker_dragging = False
+            # confirm_sticker呼び出しを削除
+            return
+
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self.pan_timer.isActive():
+                self.pan_timer.stop()
+            if self.is_panning:
+                self.is_panning = False
+                self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
 
     def wheelEvent(self, event: QWheelEvent):
         if self.image is None:
@@ -480,16 +571,43 @@ class MainWindow(QMainWindow):
     def on_sticker_selected(self, pixmap):
         self.sticker_editing = True
         self.temp_sticker = pixmap
-        # フレーム中央へ配置
-        frame_width = self.ui.frame.width()
         frame_height = self.ui.frame.height()
-        sticker_width = self.temp_sticker.width()
-        sticker_height = self.temp_sticker.height()
-        self.temp_sticker_pos = QPoint(
-            (frame_width - sticker_width) // 2,
-            (frame_height - sticker_height) // 2
-        )
+        target_h = frame_height / 3.0
+        sticker_h = self.temp_sticker.height()
+        if sticker_h > 0:
+            self.temp_sticker_scale = target_h / sticker_h
+        else:
+            self.temp_sticker_scale = 1.0
+        self.temp_sticker_pos = QPoint(0, 0)
         self.update()
+
+    def confirm_sticker(self):
+        if self.image is None or self.temp_sticker.isNull():
+            return
+
+        sticker_img = self.temp_sticker.toImage()
+        buf = sticker_img.constBits()
+        w_st = sticker_img.width()
+        h_st = sticker_img.height()
+        arr_st = np.frombuffer(buf, dtype=np.uint8).reshape((h_st, w_st, 4))
+        # BGRA -> BGR に変更
+        sticker_bgr = cv2.cvtColor(arr_st, cv2.COLOR_BGRA2BGR)
+
+        sw = int(w_st * self.temp_sticker_scale)
+        sh = int(h_st * self.temp_sticker_scale)
+        sticker_resized = cv2.resize(sticker_bgr, (sw, sh), interpolation=cv2.INTER_LINEAR)
+
+        x = self.temp_sticker_pos.x()
+        y = self.temp_sticker_pos.y()
+        roi = self.image[y:y+sh, x:x+sw]
+        if roi.shape[0] == 0 or roi.shape[1] == 0:
+            return
+
+        roi[:sticker_resized.shape[0], :sticker_resized.shape[1]] = sticker_resized
+        self.set_image(self.image, fit_to_frame=False)
+        self.sticker_editing = False
+        self.temp_sticker = QPixmap()
+        self.temp_sticker_scale = 1.0
 
     def update_image(self):
         if self.image is None:
@@ -551,6 +669,27 @@ class MainWindow(QMainWindow):
             self.update()
             return
 
+        if self.is_scaling_sticker:
+            dx = event.pos().x() - self.sticker_scale_start_pos.x()
+            dy = event.pos().y() - self.sticker_scale_start_pos.y()
+            # 拡大率を適当に算出 (x変位大きめでスケール変化)
+            scale_change = 1.0 + (dx + dy) * 0.005
+            self.temp_sticker_scale = max(0.1, self.sticker_scale_start_value * scale_change)
+            self.update()
+            return
+
+        if self.sticker_dragging:
+            # ステッカーを画像座標系で移動する
+            final_scale, x_disp, y_disp = self.get_display_transform()
+            new_display_pos = event.pos() - self.sticker_drag_offset
+            # 画像座標へ変換
+            new_x_img = (new_display_pos.x() - x_disp) / final_scale
+            new_y_img = (new_display_pos.y() - y_disp) / final_scale
+            self.temp_sticker_pos.setX(int(new_x_img))
+            self.temp_sticker_pos.setY(int(new_y_img))
+            self.update()
+            return
+
         if self.is_panning:
             delta = event.pos() - self.last_pan_pos
             self.pan_offset_x += delta.x()
@@ -567,38 +706,19 @@ class MainWindow(QMainWindow):
             painter.drawRect(self.trim_rect)
             painter.end()
 
+    def get_display_transform(self):
+        """画像座標→画面座標変換に必要なスケールとオフセットを返す"""
         if self.image is None:
-            return
-
-        painter = QPainter(self)
-        painter.translate(self.image_label.pos())
-
-        # テキスト描画
-        if getattr(self, "text_editing", False) and getattr(self, "temp_text", ""):
-            painter.setFont(self.temp_font)
-            painter.setPen(self.temp_color)
-            painter.drawText(self.temp_text_pos, self.temp_text)
-
-        # ステッカー描画
-        if getattr(self, "sticker_editing", False) and not self.temp_sticker.isNull():
-            scaled_width = self.temp_sticker.width() * self.temp_sticker_scale
-            scaled_height = self.temp_sticker.height() * self.temp_sticker_scale
-            sticker_scaled = self.temp_sticker.scaled(
-                scaled_width, scaled_height,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            self.temp_sticker_pos.setX(
-                max(0, min(self.temp_sticker_pos.x(),
-                    self.ui.frame.width() - scaled_width))
-            )
-            self.temp_sticker_pos.setY(
-                max(0, min(self.temp_sticker_pos.y(),
-                    self.ui.frame.height() - scaled_height))
-            )
-            painter.drawPixmap(self.temp_sticker_pos, sticker_scaled)
-
-        painter.end()
+            return 1.0, 0, 0
+        final_scale = self.base_scale_factor * self.user_scale_factor
+        h_img, w_img, _ = self.image.shape
+        scaled_w = int(w_img * final_scale)
+        scaled_h = int(h_img * final_scale)
+        fw = self.ui.frame.width()
+        fh = self.ui.frame.height()
+        x_display = (fw - scaled_w) // 2 + self.pan_offset_x
+        y_display = (fh - scaled_h) // 2 + self.pan_offset_y
+        return final_scale, x_display, y_display
 
 
 def main():

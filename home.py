@@ -17,7 +17,7 @@ class InfoDialog(QDialog):
     self.setWindowTitle("情報")
     self.setFixedSize(200, 100)
     layout = QVBoxLayout(self)
-    self.info_label = QLabel("pypicture\nバージョン: 1.0.0", self)
+    self.info_label = QLabel("pypicture\nバージョン: 1.0.1", self)
     self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     layout.addWidget(self.info_label)
 

@@ -1,3 +1,6 @@
+# pyright: reportAttributeAccessIssue=false
+# pyright: reportCallIssue=false
+# pyright: reportOptionalMemberAccess=false
 import sys
 import numpy as np
 import cv2
@@ -35,24 +38,55 @@ class ImageLabel(QLabel):
         painter = QPainter(self)
         # テキスト描画
         if self.main_window and getattr(self.main_window, "text_editing", False) and self.main_window.temp_text:
+            final_scale, x_disp, y_disp = self.main_window.get_display_transform()
+            txt_x = x_disp + int(self.main_window.temp_text_pos.x() * final_scale)
+            txt_y = y_disp + int(self.main_window.temp_text_pos.y() * final_scale)
             painter.setFont(self.main_window.temp_font)
             painter.setPen(self.main_window.temp_color)
-            painter.drawText(self.main_window.temp_text_pos, self.main_window.temp_text)
+            painter.drawText(QPoint(txt_x, txt_y), self.main_window.temp_text)
+            # テキスト範囲可視化用
+            fm = QFontMetrics(self.main_window.temp_font)
+            text_rect = QRect(QPoint(txt_x, txt_y), fm.size(0, self.main_window.temp_text))
+            painter.setPen(Qt.red)
+            painter.drawRect(text_rect)
         # ステッカー描画はドラッグ中かスケーリング中のときのみ
         if self.main_window and self.main_window.sticker_editing and not self.main_window.temp_sticker.isNull():
-            sw = self.main_window.temp_sticker.width() * self.main_window.temp_sticker_scale
-            sh = self.main_window.temp_sticker.height() * self.main_window.temp_sticker_scale
-            # フレーム外へ行かないよう補正
-            self.main_window.temp_sticker_pos.setX(
-                max(0, min(self.main_window.temp_sticker_pos.x(), self.width() - sw))
-            )
-            self.main_window.temp_sticker_pos.setY(
-                max(0, min(self.main_window.temp_sticker_pos.y(), self.height() - sh))
-            )
+            final_scale, x_disp, y_disp = self.main_window.get_display_transform()
+            sx = x_disp + int(self.main_window.temp_sticker_pos.x() * final_scale)
+            sy = y_disp + int(self.main_window.temp_sticker_pos.y() * final_scale)
+            sw = int(self.main_window.temp_sticker.width() * self.main_window.temp_sticker_scale * final_scale)
+            sh = int(self.main_window.temp_sticker.height() * self.main_window.temp_sticker_scale * final_scale)
             sticker_scaled = self.main_window.temp_sticker.scaled(
-                sw, sh, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                sw, sh,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
             )
-            painter.drawPixmap(self.main_window.temp_sticker_pos, sticker_scaled)
+            painter.drawPixmap(QPoint(sx, sy), sticker_scaled)
+        if self.main_window and not self.main_window.temp_sticker.isNull():
+            final_scale, x_disp, y_disp = self.main_window.get_display_transform()
+            sx = x_disp + int(self.main_window.temp_sticker_pos.x() * final_scale)
+            sy = y_disp + int(self.main_window.temp_sticker_pos.y() * final_scale)
+            sw = int(self.main_window.temp_sticker.width() * self.main_window.temp_sticker_scale * final_scale)
+            sh = int(self.main_window.temp_sticker.height() * self.main_window.temp_sticker_scale * final_scale)
+
+            # ステッカー描画はドラッグ中・スケーリング中のときのみ
+            if self.main_window.sticker_editing:
+                sticker_scaled = self.main_window.temp_sticker.scaled(
+                    sw, sh,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                painter.drawPixmap(QPoint(sx, sy), sticker_scaled)
+
+            # マウスオーバーなら点線枠、ドラッグ中なら実線枠
+            if self.main_window.sticker_dragging:
+                painter.setPen(QPen(Qt.red, 2, Qt.SolidLine))
+            elif self.main_window.mouse_over_sticker:
+                painter.setPen(QPen(Qt.red, 2, Qt.DashLine))
+            else:
+                painter.setPen(Qt.NoPen)
+
+            painter.drawRect(QRect(sx, sy, sw, sh))
         painter.end()
 
 
@@ -100,6 +134,7 @@ class MainWindow(QMainWindow):
         self.temp_font = QFont()
         self.temp_color = QColor(0, 0, 0)
         self.text_dragging = False
+        self.text_drag_offset = QPoint()
 
         # ステッカー編集
         self.sticker_editing = False
@@ -115,6 +150,8 @@ class MainWindow(QMainWindow):
         self.is_scaling_sticker = False
         self.sticker_scale_start_pos = QPoint()
         self.sticker_scale_start_value = 1.0
+
+        self.mouse_over_sticker = False
 
         # パン用タイマー
         self.pan_timer = QTimer(self)
@@ -224,6 +261,9 @@ class MainWindow(QMainWindow):
         # ステッカーが未確定なら先に合成
         if self.sticker_editing:
             self.confirm_sticker()
+        # テキストも未確定なら合成
+        if self.text_editing:
+            self.confirm_text()
 
         if self.image is None:
             QMessageBox.warning(self, "警告", "画像がロードされていません。")
@@ -250,6 +290,20 @@ class MainWindow(QMainWindow):
     def mousePressEvent(self, event):
         if self.image is None:
             return
+
+        if self.text_editing and event.button() == Qt.MouseButton.LeftButton:
+            final_scale, x_disp, y_disp = self.get_display_transform()
+            txt_x = x_disp + int(self.temp_text_pos.x() * final_scale)
+            txt_y = y_disp + int(self.temp_text_pos.y() * final_scale)
+            fm = QFontMetrics(self.temp_font)
+            w_rect = fm.horizontalAdvance(self.temp_text)
+            h_rect = fm.height()
+            # ベースラインでなくテキスト全体
+            text_rect = QRect(txt_x, txt_y - fm.ascent(), w_rect, h_rect)
+            if text_rect.contains(event.pos()):
+                self.text_dragging = True
+                self.text_drag_offset = event.pos() - text_rect.topLeft()
+                return
 
         # トリミング中は視点移動を無効化
         if self.cropping and event.button() == Qt.MouseButton.LeftButton:
@@ -285,8 +339,7 @@ class MainWindow(QMainWindow):
                 self.sticker_dragging = True
                 self.sticker_drag_offset = event.pos() - sticker_rect.topLeft()
                 return
-
-        # 左クリックでステッカー領域外の場合はパン開始
+        # ステッカー領域外ならパンを開始
         if event.button() == Qt.MouseButton.LeftButton:
             self.pan_start_pos = event.pos()
             self.pan_timer.start(self.pan_timer_interval)
@@ -328,6 +381,9 @@ class MainWindow(QMainWindow):
             if self.is_panning:
                 self.is_panning = False
                 self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+
+        if self.text_dragging and event.button() == Qt.MouseButton.LeftButton:
+            self.text_dragging = False
 
     def wheelEvent(self, event: QWheelEvent):
         if self.image is None:
@@ -554,8 +610,8 @@ class MainWindow(QMainWindow):
 
         new_img = px.toImage()
         ptr = new_img.bits()
-        ptr.setsize(new_img.byteCount())
-        arr = np.array(ptr, dtype=np.uint8).reshape((h, w, 4))
+        size = new_img.sizeInBytes()  # QImage のバイトサイズを取得
+        arr = np.array(ptr[:size], dtype=np.uint8).reshape((h, w, 4))
         final_bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
         self.set_image(final_bgr, fit_to_frame=False)
         self.text_editing = False
@@ -574,7 +630,7 @@ class MainWindow(QMainWindow):
         frame_height = self.ui.frame.height()
         target_h = frame_height / 3.0
         sticker_h = self.temp_sticker.height()
-        if sticker_h > 0:
+        if (sticker_h > 0):
             self.temp_sticker_scale = target_h / sticker_h
         else:
             self.temp_sticker_scale = 1.0
@@ -659,7 +715,7 @@ class MainWindow(QMainWindow):
         )
 
         self.image_label.setPixmap(pixmap_roi)
-        self.image_label.setGeometry(clipped)
+        self.image_label.setGeometry(display_rect)
         self.update()
 
     def mouseMoveEvent(self, event):
@@ -689,6 +745,28 @@ class MainWindow(QMainWindow):
             self.temp_sticker_pos.setY(int(new_y_img))
             self.update()
             return
+
+        if self.text_dragging:
+            final_scale, x_disp, y_disp = self.get_display_transform()
+            new_disp = event.pos() - self.text_drag_offset
+            new_x_img = (new_disp.x() - x_disp)
+            new_y_img = (new_disp.y() - y_disp)
+            self.temp_text_pos.setX(int(new_x_img / final_scale))
+            self.temp_text_pos.setY(int(new_y_img / final_scale))
+            self.update()
+            return
+
+        # ステッカーホバー判定
+        self.mouse_over_sticker = False
+        if self.sticker_editing and not self.temp_sticker.isNull():
+            final_scale, x_disp, y_disp = self.get_display_transform()
+            sx = x_disp + int(self.temp_sticker_pos.x() * final_scale)
+            sy = y_disp + int(self.temp_sticker_pos.y() * final_scale)
+            scaled_w = int(self.temp_sticker.width() * self.temp_sticker_scale * final_scale)
+            scaled_h = int(self.temp_sticker.height() * self.temp_sticker_scale * final_scale)
+            sticker_rect = QRect(QPoint(sx, sy), QSize(scaled_w, scaled_h))
+            if sticker_rect.contains(event.pos()):
+                self.mouse_over_sticker = True
 
         if self.is_panning:
             delta = event.pos() - self.last_pan_pos

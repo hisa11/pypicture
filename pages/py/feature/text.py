@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                               QPushButton, QComboBox, QSpinBox, QColorDialog)
+                               QPushButton, QComboBox, QSpinBox, QColorDialog, QLineEdit)
 from PySide6.QtGui import QFont, QColor
 from PySide6.QtCore import Signal, Qt
 
@@ -24,6 +24,10 @@ class TextWindow(QDialog):
         self.color_btn.clicked.connect(self.on_color_select)
         self.selected_color = QColor(0, 0, 0)
 
+        # テキスト入力用テキストボックス
+        self.text_input = QLineEdit(self)
+        self.main_layout.addWidget(self.text_input)
+
         # テキスト入力完了用ボタン
         self.ok_button = QPushButton("OK")
         self.ok_button.clicked.connect(self.apply_settings)
@@ -45,6 +49,8 @@ class TextWindow(QDialog):
 
     def apply_settings(self):
         font = QFont(self.font_combo.currentText(), self.size_spin.value())
+        # 入力文字列をシグナルに渡す
         self.text_applied.emit(
-            "", font, self.selected_color, self.size_spin.value())
+            self.text_input.text(), font, self.selected_color, self.size_spin.value()
+        )
         self.accept()
